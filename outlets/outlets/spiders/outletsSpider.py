@@ -44,7 +44,7 @@ class OutletsSpider(BaseSpider):
         jq.find('option').each(self.getUrl)
         
         #获得url之后,将分别对这些url进行过滤和继续抓取,请求地址获取每个outlets店铺的内容
-        return [self.urls[1]]
+        return [self.urls[0]]
     
     #定义解析outlet店铺首页的方法
     def parseShopHome(self, response):    
@@ -52,7 +52,8 @@ class OutletsSpider(BaseSpider):
             logger.error('{0} error code: {1}'.format(response.url, str(response.status)))
             return
         pqBody = pq(response.body)
-        url = self.scrapyHost + pqBody('.side-nav').find('a').eq(0).attr('href')
+        url = self.scrapyHost + 'outlets/' + pqBody('.side-nav').find('a').eq(0).attr('href')
+
         #返回url继续抓取商店的商品页面
         return [scrapy.Request(url, callback=self.parseShop)]
     
@@ -63,27 +64,39 @@ class OutletsSpider(BaseSpider):
             logger.error('{0} error code: {1}'.format(response.url, str(response.status)))
             return
         pqBody = pq(response.body)
-        pqCenter = pqBody('.center_details').eq(0)
+        pqCenter = pqBody('.outlets').eq(0).find('p').eq(0)
       
-        #获得 店铺名称 地址 电话 文本
-        tempAry = pqCenter.text().split('\n')
-        tempAry = map(lambda x: x.strip(),tempAry)
-        tempAry = filter(lambda x: x!='',tempAry)
-        
+        #获得 店铺名称 地址 电话 文本        
+        tempAry = pqCenter.text().encode('utf-8').strip().split('(')
+         
         #去除最后一位C，获得店铺名称
-        shopName = tempAry[0][:-1]
-        address = '{0} {1}'.format(tempAry[1],tempAry[2])
-        tel = tempAry[3]
-       
-        ##明天继续
+        shopName = pqBody('h1.title').text().encode('utf-8').strip()
+        shopName = shopName[0:-2]
+        address = tempAry[0]
+        tel = '(' + tempAry[1]
+        
+        mapUrl = pqBody('.CenterMap').eq(0).attr('onclick')
+        mapUrl = mapUrl.split('(\'')[1].split('\')')[0]
+        
+        print '###############'
+        print shopName
+        print address
+        print tel
+        print mapUrl
+        
+        print '###############'
+        
+      
+        
         
         outletDict = {
-            name : shopName,
-            address : 1,
-            tel:1,
-            category:1,
-            shops:[],
-            pdf:1,
+            'name': shopName,
+            'address' : 1,
+            'tel':1,
+            'category':1,
+            'shops':[],
+            'pdf':1,
+            'img':1
         }
         
         pass        
