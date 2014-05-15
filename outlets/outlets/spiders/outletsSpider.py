@@ -49,8 +49,10 @@ class OutletsSpider(BaseSpider):
         jq = pq(response.body)('select').eq(2)
         jq.find('option').each(self.getUrl)
         
-        #获得url之后,将分别对这些url进行过滤和继续抓取,请求地址获取每个outlets店铺的内容
-        return [self.urls[0]]
+        #print '#################'
+        #print self.urls[0]
+        #return [self.urls[0]]
+        return self.urls
     
     #定义解析outlet店铺首页的方法，ex：http://www.premiumoutlets.com/outlets/outlet.asp?id=5
     def parseShopHome(self, response):    
@@ -71,7 +73,11 @@ class OutletsSpider(BaseSpider):
             return
         pqBody = pq(response.body)
         pqCenter = pqBody('.outlets').eq(0).find('p').eq(0)
-      
+        
+        #获取shop的Id号
+        parsed = urlparse.urlparse(response.url)
+        shopId = str(urlparse.parse_qs(parsed.query)['id'][0]) or 'nan'
+        
         #获得 店铺名称 地址 电话 文本        
         tempAry = pqCenter.text().encode('utf-8').strip().split('(')
          
@@ -81,29 +87,78 @@ class OutletsSpider(BaseSpider):
         address = tempAry[0]
         tel = '(' + tempAry[1]
         
-        mapUrl = pqBody('.CenterMap').eq(0).attr('onclick')
-        mapUrl = self.scrapyHost+'outlets/' + mapUrl.split('(\'')[1].split('\')')[0]
+        #正常情况下
+        if pqBody('.CenterMap').eq(0).length > 0:
         
-        pdfUrl = pqBody('#Padder').find('a').eq(2).attr('href') 
-        pdfUrl = urlparse.urljoin(self.scrapyHost+'outlets/', pdfUrl)
+            mapUrl = pqBody('.CenterMap').eq(0).attr('onclick')
+            mapUrl = self.scrapyHost+'outlets/' + mapUrl.split('(\'')[1].split('\')')[0]
+            
+            pdfUrl = pqBody('#Padder').find('a').eq(2).attr('href') 
+            pdfUrl = urlparse.urljoin(self.scrapyHost+'outlets/', pdfUrl)
+            
+            #print '###############'
+            #print shopName
+            #print address
+            #print tel
+            #print mapUrl
+            #print pdfUrl
+            #print '###############'
+                   
+            outletDict = {
+                'shopId':shopId,
+                'name': shopName,
+                'address' : address,
+                'tel':tel,
+                'pdfUrl':pdfUrl,
+            }
+            
+            return [scrapy.Request(mapUrl, callback=self.parseMap, meta={'outletDict':outletDict})]
         
-        print '###############'
-        #print shopName
-        #print address
-        #print tel
-        #print mapUrl
-        # print pdfUrl
-        # print '###############'
-               
-        outletDict = {
-            'name': shopName,
-            'address' : address,
-            'tel':tel,
-            'category':1,
-            'pdfUrl':pdfUrl,
-        }
+        #非正常情况1 url地址 http://www.premiumoutlets.com/outlets/store_listing.asp?id=112
+        elif pqBody('.Module').length == 0:
+            shopDict = {
+                'id':shopId,
+                'name': str(shopName),
+                'address' : str(address),
+                'tel':str(tel),
+                'shopLIst':[]                 
+            }         
+            self.saveJsonFile(shopDict)
+            pass
         
-        return [scrapy.Request(mapUrl, callback=self.parseMap, meta={'outletDict':outletDict})]        
+        #非正常情况2 url地址 http://www.premiumoutlets.com/outlets/store_listing.asp?id=111
+        else:
+            shopDict = {
+                'id':shopId,
+                'name': str(shopName),
+                'address' : str(address),
+                'tel':str(tel),
+                'shopList':[]                 
+            }
+            
+            def parseRow(i,row):
+                pqRow = pq(row)
+                category = pqRow.find('h2').find('span').text().encode('utf-8').strip()
+                #定义jquery对象
+                pqSuit = pqRow.find('.suite').find('li')
+                pqStore = pqRow.find('.store').find('li')
+                pqTelephone = pqRow.find('.telephone').find('li')
+                rowLen = pqRow.find('.suite').find('li').length
+                #循环解析存入数组,从1开始，0是cap跳过
+                for i in range(1, rowLen):     
+                    tempDict = {
+                        'category':category,
+                        'suit':pqSuit.eq(i).text().encode('utf-8').strip(),
+                        'store':pqStore.eq(i).text().encode('utf-8').strip(),
+                        'telephone':pqTelephone.eq(i).text().encode('utf-8').strip(),
+                    }
+                    shopDict['shopList'].append(tempDict)
+            
+            #each循环每行,获取店铺数据      
+            pqBody('.Module').each(parseRow)
+            #存入json
+            self.saveJsonFile(shopDict)
+            pass
         
         
     #解析地图页面，ex：http://www.premiumoutlets.com/outlets/store_listing_map.asp?id=5
@@ -114,9 +169,11 @@ class OutletsSpider(BaseSpider):
         
         #获得店铺id
         parsed = urlparse.urlparse(response.url)
-        shopId = str(urlparse.parse_qs(parsed.query)['id'][0]) or 'nan'
+       
         
+        #根据meta获取上一步的字典
         outletDict = response.meta["outletDict"]
+        shopId = outletDict['shopId']
         pqBody = pq(response.body)
         shops = []
         imgs = []
@@ -150,6 +207,7 @@ class OutletsSpider(BaseSpider):
             pqTable = pq(table)
             pqTable.find('tr').each(parseTr)
         
+        #解析图片方法
         def parseImg(i, img):
             pqImg = pq(img)
             imgUrl = self.scrapyHost+'outlets/' + pqImg.attr('src')
@@ -164,17 +222,24 @@ class OutletsSpider(BaseSpider):
         #循环获取图片内容
         pqBody('.screenImg').each(parseImg)
         
-        print '$$$$$$$$$$$$$'
+        #print '$$$$$$$$$$$$$'
         #print imgs
         #print shops
-        print outletDict
-        print shopId
-        print outletDict['pdfUrl']
-                
-        filename = self.curPath + os.sep + 'json' + os.sep + 'json_' + shopId + '.json'
-        with open(filename, 'wb') as f:
-            f.write(json.dumps(shops))
-          
+        #print outletDict
+        #print shopId
+        #print outletDict['pdfUrl']
+        
+        #重组JSON文件
+        shopDict = {
+            'id':shopId,
+            'name': str(outletDict['name']),
+            'address' : str(outletDict['address']),
+            'tel':str(outletDict['tel']),
+            'shopLIst':shops,
+        }
+        
+        self.saveJsonFile(shopDict)
+        
         imgs.append(
             scrapy.Request(outletDict['pdfUrl'], callback=self.parsePdf, meta={'shopId':shopId})
             )
@@ -190,6 +255,7 @@ class OutletsSpider(BaseSpider):
           return
         shopId = response.meta['shopId']
         
+        #拼接保存图片的目录地址
         filename = self.curPath + os.sep + 'img' + os.sep + 'map_' + shopId + '.gif'
         with open(filename, 'wb') as f:
             f.write(response.body)
@@ -202,10 +268,16 @@ class OutletsSpider(BaseSpider):
           return
         shopId = response.meta['shopId']
         
+        #拼接保存pdf的目录地址
         filename = self.curPath + os.sep + 'pdf' + os.sep + 'pdf_' + shopId + '.pdf'
         with open(filename, 'wb') as f:
             f.write(response.body)
         pass
     
-    def toDb(self, itemDict):
-        pass
+    def saveJsonFile(self, jsonDict):
+        
+         #拼接json文件的目录地址
+        filename = self.curPath + os.sep + 'json' + os.sep + 'json_' + jsonDict['id'] + '.json'
+        #将商店的字典写入json文件
+        with open(filename, 'wb') as f:
+            f.write(json.dumps(jsonDict))
