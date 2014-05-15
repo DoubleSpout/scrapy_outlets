@@ -79,10 +79,10 @@ class OutletsSpider(BaseSpider):
         shopId = str(urlparse.parse_qs(parsed.query)['id'][0]) or 'nan'
         
         #获得 店铺名称 地址 电话 文本        
-        tempAry = pqCenter.text().encode('utf-8').strip().split('(')
+        tempAry = pqCenter.text().strip().split('(')
          
         #去除最后一位C，获得店铺名称
-        shopName = pqBody('h1.title').text().encode('utf-8').strip()
+        shopName = pqBody('h1.title').text().strip()
         shopName = shopName[0:-2]
         address = tempAry[0]
         tel = '(' + tempAry[1]
@@ -118,9 +118,9 @@ class OutletsSpider(BaseSpider):
         elif pqBody('.Module').length == 0:
             shopDict = {
                 'id':shopId,
-                'name': str(shopName),
-                'address' : str(address),
-                'tel':str(tel),
+                'name': shopName,
+                'address' : address,
+                'tel':tel,
                 'shopLIst':[]                 
             }         
             self.saveJsonFile(shopDict)
@@ -130,15 +130,15 @@ class OutletsSpider(BaseSpider):
         else:
             shopDict = {
                 'id':shopId,
-                'name': str(shopName),
-                'address' : str(address),
-                'tel':str(tel),
+                'name': shopName,
+                'address' : address,
+                'tel':tel,
                 'shopList':[]                 
             }
             
             def parseRow(i,row):
                 pqRow = pq(row)
-                category = pqRow.find('h2').find('span').text().encode('utf-8').strip()
+                category = pqRow.find('h2').find('span').text().strip()
                 #定义jquery对象
                 pqSuit = pqRow.find('.suite').find('li')
                 pqStore = pqRow.find('.store').find('li')
@@ -148,9 +148,9 @@ class OutletsSpider(BaseSpider):
                 for i in range(1, rowLen):     
                     tempDict = {
                         'category':category,
-                        'suit':pqSuit.eq(i).text().encode('utf-8').strip(),
-                        'store':pqStore.eq(i).text().encode('utf-8').strip(),
-                        'telephone':pqTelephone.eq(i).text().encode('utf-8').strip(),
+                        'suit':pqSuit.eq(i).text().strip(),
+                        'store':pqStore.eq(i).text().strip(),
+                        'telephone':pqTelephone.eq(i).text().strip(),
                     }
                     shopDict['shopList'].append(tempDict)
             
@@ -189,10 +189,10 @@ class OutletsSpider(BaseSpider):
             else:
                 #保存店铺类型，店铺编号，店铺名称，店铺电话
                 parentTable = pqtr.parent()
-                category = parentTable.find('tr').eq(0).find('td').eq(0).text().encode('utf-8').strip()
-                suit = pqtd.eq(0).text().encode('utf-8').strip()
-                store = pqtd.eq(0).text().encode('utf-8').strip()
-                telephone = pqtd.eq(0).text().encode('utf-8').strip()
+                category = parentTable.find('tr').eq(0).find('td').eq(0).text().strip()
+                suit = pqtd.eq(0).text().strip()
+                store = pqtd.eq(0).text().strip()
+                telephone = pqtd.eq(0).text().strip()
                 
                 shops.append({
                     'category':category,
@@ -232,9 +232,9 @@ class OutletsSpider(BaseSpider):
         #重组JSON文件
         shopDict = {
             'id':shopId,
-            'name': str(outletDict['name']),
-            'address' : str(outletDict['address']),
-            'tel':str(outletDict['tel']),
+            'name': outletDict['name'],
+            'address' : outletDict['address'],
+            'tel':outletDict['tel'],
             'shopLIst':shops,
         }
         
@@ -251,7 +251,7 @@ class OutletsSpider(BaseSpider):
     #处理图片保存图片
     def parseImg(self,response):
         if response.status != 200 :
-          logger.error('{0} error code: {1}'.format(response.url, str(response.status)))
+          logger.error('{0} error code: {1}'.format(response.url, response.status))
           return
         shopId = response.meta['shopId']
         
@@ -264,7 +264,7 @@ class OutletsSpider(BaseSpider):
     #处理pdf文件保存文件
     def parsePdf(self,response):
         if response.status != 200 :
-          logger.error('{0} error code: {1}'.format(response.url, str(response.status)))
+          logger.error('{0} error code: {1}'.format(response.url, response.status))
           return
         shopId = response.meta['shopId']
         
