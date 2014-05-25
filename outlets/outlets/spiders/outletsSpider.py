@@ -7,6 +7,8 @@ from scrapy.spider import BaseSpider
 from pyquery import PyQuery as pq
 import logging
 import json
+import urllib
+import urllib2
 
 #设置logger模块
 logger = logging.getLogger('mylogger')
@@ -42,7 +44,7 @@ class OutletsSpider(BaseSpider):
     def parse(self, response):
         #如果请求地址不返回200,记录错误日志
         if response.status != 200 :
-            logger.error('www.premiumoutlets.com error code: {0}'.format(str(response.status)))
+            logger.error('www.premiumoutlets.com error code: {}'.format(str(response.status)))
             return
         
         #将响应转化为pq对象
@@ -51,13 +53,13 @@ class OutletsSpider(BaseSpider):
         
         #print '#################'
         #print self.urls[0]
-        #return [self.urls[0]]
+        #return [self.urls[4]]
         return self.urls
     
     #定义解析outlet店铺首页的方法，ex：http://www.premiumoutlets.com/outlets/outlet.asp?id=5
     def parseShopHome(self, response):    
         if response.status != 200 :
-            logger.error('{0} error code: {1}'.format(response.url, str(response.status)))
+            logger.error('{} error code: {}'.format(response.url, str(response.status)))
             return
         pqBody = pq(response.body)
         url = self.scrapyHost + 'outlets/' + pqBody('.side-nav').find('a').eq(0).attr('href')
@@ -69,7 +71,7 @@ class OutletsSpider(BaseSpider):
     #定义解析outlet店铺商品页面的方法，ex：http://www.premiumoutlets.com/outlets/store_listing.asp?id=5
     def parseShop(self, response):
         if response.status != 200 :
-            logger.error('{0} error code: {1}'.format(response.url, str(response.status)))
+            logger.error('{} error code: {}'.format(response.url, str(response.status)))
             return
         pqBody = pq(response.body)
         pqCenter = pqBody('.outlets').eq(0).find('p').eq(0)
@@ -84,7 +86,7 @@ class OutletsSpider(BaseSpider):
         #去除最后一位C，获得店铺名称
         shopName = pqBody('h1.title').text().strip()
         shopName = shopName[0:-2]
-        address = tempAry[0]
+        address = tempAry[0].replace(u'\xa0', u' ').strip()
         tel = '(' + tempAry[1]
         
         #正常情况下
@@ -164,7 +166,7 @@ class OutletsSpider(BaseSpider):
     #解析地图页面，ex：http://www.premiumoutlets.com/outlets/store_listing_map.asp?id=5
     def parseMap(self, response):
         if response.status != 200 :
-          logger.error('{0} error code: {1}'.format(response.url, str(response.status)))
+          logger.error('{} error code: {}'.format(response.url, str(response.status)))
           return
         
         #获得店铺id
@@ -191,8 +193,8 @@ class OutletsSpider(BaseSpider):
                 parentTable = pqtr.parent()
                 category = parentTable.find('tr').eq(0).find('td').eq(0).text().strip()
                 suit = pqtd.eq(0).text().strip()
-                store = pqtd.eq(0).text().strip()
-                telephone = pqtd.eq(0).text().strip()
+                store = pqtd.eq(1).text().strip()
+                telephone = pqtd.eq(2).text().strip()
                 
                 shops.append({
                     'category':category,
@@ -223,18 +225,93 @@ class OutletsSpider(BaseSpider):
         pqBody('.screenImg').each(parseImg)
         
         #print '$$$$$$$$$$$$$'
+        #print outletDict['address']
         #print imgs
         #print shops
         #print outletDict
         #print shopId
         #print outletDict['pdfUrl']
+        #print '$$$$$$$$$$$$$'
         
+        #重组JSON文件之前，需要去google api 获取地理位置，经纬度，邮编，
+    
+        paramAddress = urllib.urlencode({
+            'address':outletDict['address']
+        })
+        googleUrl = "http://maps.googleapis.com/maps/api/geocode/json?{}&sensor=true".format(paramAddress)
+        googleReq = urllib2.Request(googleUrl)
+        googleRes = urllib2.urlopen(googleReq)
+        googleResJson = json.loads(googleRes.read())
+        addressDict = googleResJson['results'][0]
+        
+        tempDict = {}
+        for i in range(0, len(addressDict['address_components'])):
+            resultDict = addressDict['address_components'][i]
+            
+            if('street_number' in resultDict['types']):
+                 tempDict['streetNumber'] = resultDict['long_name']   #街道号
+                 
+            if('establishment' in resultDict['types']):
+                 tempDict['establishment'] = resultDict['long_name']   #店名
+
+            if('route' in resultDict['types']):
+                 tempDict['route'] = resultDict['long_name']   #路名
+                 
+            if('locality' in resultDict['types']):
+                 tempDict['locality'] = resultDict['long_name']   #地方名
+                 
+            if('administrative_area_level_2' in resultDict['types']):
+                 tempDict['administrative_area_level_2'] = resultDict['long_name']   #行政区域级别2
+                 
+            if('administrative_area_level_1' in resultDict['types']):
+                 tempDict['administrative_area_level_1'] = resultDict['long_name']   #行政区域级别1
+                 
+            if('country' in resultDict['types']):
+                 tempDict['country'] = resultDict['long_name']   #国家
+        
+            if('postal_code' in resultDict['types']):
+                tempDict['postal_code'] = resultDict['long_name']   #邮编       
+        
+        
+        if 'streetNumber' not in tempDict:
+            tempDict['streetNumber'] = ''
+        if 'establishment' not in tempDict:
+            tempDict['establishment'] = ''
+        if 'route' not in tempDict:
+            tempDict['route'] = ''
+        if 'locality' not in tempDict:
+            tempDict['locality'] = ''
+        if 'administrative_area_level_2' not in tempDict:
+            tempDict['administrative_area_level_2'] = ''
+        if 'administrative_area_level_1' not in tempDict:
+            tempDict['administrative_area_level_1'] = ''
+        if 'country' not in tempDict:
+            tempDict['country'] = ''
+        if 'postal_code' not in tempDict:
+            tempDict['postal_code'] = ''
+     
+
+        tempDict['lat'] = addressDict['geometry']['location']['lat'] #维度
+        tempDict['lng'] = addressDict['geometry']['location']['lng'] #经度
+                    
         #重组JSON文件
         shopDict = {
             'id':shopId,
             'name': outletDict['name'],
             'address' : outletDict['address'],
             'tel':outletDict['tel'],
+            
+            'streetNumber':tempDict['streetNumber'],
+            'establishment':tempDict['establishment'],
+            'route':tempDict['route'],
+            'locality':tempDict['locality'],
+            'administrative_area_level_2':tempDict['administrative_area_level_2'],
+            'administrative_area_level_1':tempDict['administrative_area_level_1'],
+            'country':tempDict['country'],
+            'postal_code':tempDict['postal_code'],
+            'lat':tempDict['lat'],
+            'lng':tempDict['lng'],
+            
             'shopLIst':shops,
         }
         
@@ -251,7 +328,7 @@ class OutletsSpider(BaseSpider):
     #处理图片保存图片
     def parseImg(self,response):
         if response.status != 200 :
-          logger.error('{0} error code: {1}'.format(response.url, response.status))
+          logger.error('{} error code: {}'.format(response.url, response.status))
           return
         shopId = response.meta['shopId']
         
@@ -264,7 +341,7 @@ class OutletsSpider(BaseSpider):
     #处理pdf文件保存文件
     def parsePdf(self,response):
         if response.status != 200 :
-          logger.error('{0} error code: {1}'.format(response.url, response.status))
+          logger.error('{} error code: {}'.format(response.url, response.status))
           return
         shopId = response.meta['shopId']
         
